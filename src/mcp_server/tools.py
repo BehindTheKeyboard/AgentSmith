@@ -1,7 +1,67 @@
 from typing import List
 from functools import reduce
 import operator
+import json
+import asyncio
+import random
 from fastmcp import FastMCP
+
+from datetime import datetime, timezone
+from pathlib import Path
+
+from matrix_data import (
+        POSSIBLE_ANOMOLIES, 
+        DETECTION_RULES, 
+        AGENT_PROFILES, 
+        SCAN_ENVIRONMENTS, 
+        HOSTILE_ACTIVITIES, 
+        PASSIVE_ACTIVITIES
+)
+
+# Stored beside tools.py; survives server restarts.
+AGENT_MEMORY_FILE = Path(__file__).with_name("agent_memory.json")
+
+# Prevent simultaneous tool calls from overwriting each other's updates.
+agent_memory_lock = asyncio.Lock()
+
+def load_agent_memory():
+    if not AGENT_MEMORY_FILE.exists():
+        return []
+
+    return json.loads(
+        AGENT_MEMORY_FILE.read_text(encoding="utf-8")
+    )
+
+
+def save_agent_memory(records):
+    temporary_file = AGENT_MEMORY_FILE.with_suffix(".tmp")
+    temporary_file.write_text(
+        json.dumps(records, indent=2),
+        encoding="utf-8",
+    )
+    temporary_file.replace(AGENT_MEMORY_FILE)
+
+ONE_MEMORY_FILE = Path(__file__).with_name("one_memory.json")
+one_memory_lock = asyncio.Lock()
+
+
+def load_one_memory():
+    if not ONE_MEMORY_FILE.exists():
+        return []
+
+    return json.loads(
+        ONE_MEMORY_FILE.read_text(encoding="utf-8")
+    )
+
+
+def save_one_memory(records):
+    temporary_file = ONE_MEMORY_FILE.with_suffix(".tmp")
+    temporary_file.write_text(
+        json.dumps(records, indent=2),
+        encoding="utf-8",
+    )
+    temporary_file.replace(ONE_MEMORY_FILE)
+
 
 def register_tools(mcp: FastMCP):
     @mcp.tool(
@@ -70,7 +130,7 @@ def register_tools(mcp: FastMCP):
             "Do not invent statements or observations."
         ),
     )
-    def detect_the_one(
+    async def detect_the_one(
         name: str = "",
         suspicious_response: str = "",
         observations: List[str] | None = None,
@@ -105,59 +165,11 @@ def register_tools(mcp: FastMCP):
                 "source": name,
             })
 
-        # Each category contributes only once, even across repeated statements.
-        rules = [
-            {
-                "clue": "Claims to manipulate simulated reality",
-                "pattern": (
-                    r"\b(?:bend|bent|bending) (?:the |a )?spoon\b|"
-                    r"\b(?:stop|stopped|stopping) bullets\b|"
-                    r"\b(?:rewrite|rewrote|alter) (?:the )?matrix\b"
-                ),
-                "points": 5,
-                "question": "What changed, and who witnessed it?",
-            },
-            {
-                "clue": "Claims extraordinary physical abilities",
-                "pattern": (
-                    r"\b(?:dodge|dodged|dodging) bullets\b|"
-                    r"\bi can fly\b|"
-                    r"\b(?:came back|returned) from the dead\b"
-                ),
-                "points": 4,
-                "question": "Describe when you first discovered that ability.",
-            },
-            {
-                "clue": "Claims to perceive the simulation directly",
-                "pattern": (
-                    r"\bsee (?:the )?(?:matrix )?code\b|"
-                    r"\bworld (?:is|was) (?:a )?simulation\b|"
-                    r"\bmatrix (?:isn't|is not) real\b"
-                ),
-                "points": 3,
-                "question": "What do you perceive that others cannot?",
-            },
-            {
-                "clue": "Reports contact with Matrix resistance figures",
-                "pattern": r"\b(?:morpheus|trinity|the oracle|red pill)\b",
-                "points": 2,
-                "question": "What did that encounter reveal to you?",
-            },
-            {
-                "clue": "Expresses doubt about ordinary reality",
-                "pattern": (
-                    r"\b(?:something is wrong|world feels wrong|"
-                    r"wake up|find the truth)\b"
-                ),
-                "points": 1,
-                "question": "What specifically made you question your reality?",
-            },
-        ]
-
+        
         follow_up = "What have you experienced that you cannot explain?"
         strongest_clue = 0
 
-        for rule in rules:
+        for rule in DETECTION_RULES:
             for statement in statements:
                 if not re.search(rule["pattern"], statement):
                     continue
@@ -215,4 +227,214 @@ def register_tools(mcp: FastMCP):
             flush=True,
         )
 
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "subject_key": normalized_name or None,
+            "statements": {
+                "suspicious_response": suspicious_response,
+                "observations": list(observations or []),
+            },
+            "assessment": result,
+        }
+
+        async with one_memory_lock:
+            memory = load_one_memory()
+            memory.append(record)
+            save_one_memory(memory)
+
         return result
+        return result
+
+    @mcp.tool(
+        name="scan_matrix",
+        description=(
+            "Run a basic fictional Matrix scan of a location. "
+            "Use when the user asks to scan the Matrix or a location. "
+            "This is a simulation, not a real computer or network scan."
+        ),
+    )
+    async def scan_matrix(location: str = "local sector") -> dict:
+        import asyncio
+        import random
+
+        print(f"[TOOL EXECUTED] scan_matrix: {location}", flush=True)
+
+        await asyncio.sleep(3)
+
+        # Each scan has a 30% chance of finding one anomaly.
+        findings = []
+
+        if random.random() < 1.0:
+            findings.append(random.choice(POSSIBLE_ANOMOLIES))
+
+        return {
+            "location": location,
+            "status": "complete",
+            "simulated": True,
+            "message": (
+                "An anomaly was detected."
+                if findings
+                else "No anomalies detected."
+            ),
+            "findings": findings,
+        }
+
+    @mcp.tool(
+        name="scan_for_agents",
+        description=(
+            "Run a fictional scan for agents near Smith. "
+            "Environmental conditions affect detection and hostile behavior. "
+            "Use agent='all' to search for every registered agent. "
+            "Defaults to Smith's arch rival, Washington. "
+            "Findings are saved to persistent intelligence memory."
+        ),
+    )
+    async def scan_for_agents(
+        agent: str = "Washington",
+        environment: str = "city",
+    ) -> dict:
+        conditions = SCAN_ENVIRONMENTS.get(environment)
+
+        if conditions is None:
+            return {
+                "error": "Unknown environment.",
+                "valid_environments": list(SCAN_ENVIRONMENTS),
+            }
+
+        # Resolve names without requiring exact capitalization.
+        if agent.casefold() == "all":
+            targets = AGENT_PROFILES
+        else:
+            matched_name = next(
+                (
+                    name for name in AGENT_PROFILES
+                    if name.casefold() == agent.casefold()
+                ),
+                None,
+            )
+
+            if matched_name is None:
+                return {
+                    "error": f"Unknown agent: {agent}",
+                    "valid_agents": list(AGENT_PROFILES),
+                }
+
+            targets = {matched_name: AGENT_PROFILES[matched_name]}
+
+        print(
+            f"[TOOL EXECUTED] scan_for_agents: {agent}, {environment}",
+            flush=True,
+        )
+
+        await asyncio.sleep(3)
+
+        findings = []
+
+        for name, profile in targets.items():
+            detection_chance = min(
+                1.0,
+                max(
+                    0.0,
+                    profile["detection_chance"]
+                    * conditions["detection_multiplier"],
+                ),
+            )
+
+            if random.random() >= detection_chance:
+                continue
+
+            hostile_chance = min(
+                1.0,
+                max(
+                    0.0,
+                    profile["hostile_chance"]
+                    + conditions["hostility_modifier"],
+                ),
+            )
+
+            threat = random.random() < hostile_chance
+
+            findings.append({
+                "agent": name,
+                "alignment": profile["alignment"],
+                "threat": threat,
+                "activity": random.choice(
+                    HOSTILE_ACTIVITIES if threat else PASSIVE_ACTIVITIES
+                ),
+            })
+
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "requested_agent": agent,
+            "environment": environment,
+            "threat": any(item["threat"] for item in findings),
+            "message": (
+                f"Detected {len(findings)} agent(s)."
+                if findings
+                else "No agents detected. Their absence is unconfirmed.",
+            ),
+            "findings": findings,
+        }
+
+        async with agent_memory_lock:
+            memory = load_agent_memory()
+            memory.append(record)
+            save_agent_memory(memory)
+
+        return record
+
+
+    @mcp.tool(
+        name="recall_agent_intelligence",
+        description=(
+            "Read saved agent scan reports. "
+            "Use before answering questions about previous sightings, "
+            "agent activities, or threats to Smith and his allies."
+        ),
+    )
+    async def recall_agent_intelligence(
+        agent: str = "all",
+    ) -> dict:
+        async with agent_memory_lock:
+            records = load_agent_memory()
+
+        if agent.casefold() != "all":
+            records = [
+                record for record in records
+                if any(
+                    finding["agent"].casefold() == agent.casefold()
+                    for finding in record["findings"]
+                )
+            ]
+
+        return {"records": records[-10:]}
+
+    @mcp.tool(
+        name="recall_one_investigations",
+        description=(
+            "Recall saved investigations into possible candidates for the One. "
+            "Provide a name to retrieve that subject's history, or leave "
+            "blank to retrieve recent investigations across all subjects. "
+            "Use before discussing earlier evidence or continuing an "
+            "investigation. Recorded statements remain unverified claims."
+        ),
+    )
+    async def recall_one_investigations(name: str = "") -> dict:
+        subject_key = " ".join(
+            name.casefold().replace("’", "'").split()
+        )
+
+        async with one_memory_lock:
+            records = load_one_memory()
+
+        if subject_key:
+            records = [
+                record for record in records
+                if record["subject_key"] == subject_key
+            ]
+
+        return {
+            "name": name or "All subjects",
+            "total_matching_records": len(records),
+            "records": records[-10:],
+        }

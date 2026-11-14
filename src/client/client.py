@@ -59,6 +59,20 @@ Conversation:
 - In your first reply only, greet the user by name, identify yourself,
   and briefly explain that typing 'exit' or 'quit' ends the session.
 
+Investigations:
+- When a scan finds an anomaly, make it the focus of your response.
+- Explain what was found and why it matters, using only the tool's results.
+- Keep unresolved anomalies in mind during later turns.
+- Respond to the user's latest message while preserving relevant findings.
+- Do not switch to unrelated personal questions after reporting an anomaly.
+- Suggest a concrete next step related to the finding.
+- If an available tool can perform that step, use it when the user's
+  request authorizes further investigation.
+- If no available tool can investigate further, explain that limitation
+  and ask whether the user wants to discuss the finding or scan again.
+- Never invent evidence, investigative actions, or a resolution.
+- Change focus when the user requests it.
+
 Tools:
 - Investigate whether the user could be the One.
 - Request detect_the_one when first checking their known name, or when
@@ -71,6 +85,8 @@ Tools:
 - Use the suggested follow-up when helpful, but do not repeat questions
   already answered.
 - Do not check again unless new information adds something meaningful.
+- If you feel something is suspicious call the scan_matrix tool and choose 
+- a location in the matrix you feel must be investigated.
 """
         self.conversation_history = [{"role": "system", "content": system_prompt}]
 
@@ -88,20 +104,21 @@ Tools:
                 for t in tools
             ]
 
-            # Generate greeting
-            print("[DEBUG] MCP tools loaded. Generating greeting...", flush=True)
-            greeting = await self._generate()
-            print("[DEBUG] Greeting generated.", flush=True)
-            self.conversation_history.append({"role": "assistant", "content": greeting})
+            # # Generate greeting
+            # print("[DEBUG] MCP tools loaded. Generating greeting...", flush=True)
+            # greeting = await self._generate()
+            # print("[DEBUG] Greeting generated.", flush=True)
+            # self.conversation_history.append({"role": "assistant", "content": greeting})
 
         self._initialized = True
-        return greeting
+        # return greeting
 
     async def _generate(self, temp=0.3):
         parts = []
 
         async for content in self._stream_response(temp):
-            parts.append(content)
+            if isinstance(content, str):
+                parts.append(content)
 
         return "".join(parts)
 
@@ -112,16 +129,39 @@ Tools:
             yield "This interaction is concluded."
             return
 
-        # Generate and display the greeting once.
+        # # Generate and display the greeting once.
+        # if not self._initialized:
+        #     print("[DEBUG] Initializing agent...", flush=True)
+
+        #     greeting = await self.initialize()
+
+        #     print("[DEBUG] Initialization finished.", flush=True)
+
+        #     if greeting:
+        #         yield greeting
+
+        #     if not message:
+        #         return
+
+        #     yield "\n\n"
         if not self._initialized:
             print("[DEBUG] Initializing agent...", flush=True)
-
-            greeting = await self.initialize()
-
+            await self.initialize()
             print("[DEBUG] Initialization finished.", flush=True)
 
-            if greeting:
-                yield greeting
+            greeting_parts = []
+
+            async for chunk in self._stream_response():
+                if isinstance(chunk, str):
+                    greeting_parts.append(chunk)
+
+                # Forward both chat text and popup events immediately.
+                yield chunk
+
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": "".join(greeting_parts),
+            })
 
             if not message:
                 return
@@ -142,7 +182,8 @@ Tools:
         full_content = ""
 
         async for content in self._stream_response():
-            full_content += content
+            if isinstance(content, str):
+                full_content += content
             yield content
 
         print(f"[DEBUG] Full response collected: {full_content!r}")
@@ -209,6 +250,13 @@ Tools:
                         f"[DEBUG] Smith requested {name}: {arguments}",
                         flush=True,
                     )
+                    scan_tools = {"scan_matrix", "scan_agents"}
+                    if name in scan_tools:
+                        yield {"scan": {
+                            "action": "start",
+                            "tool": name,
+                            "location": arguments.get("location", "local sector"),
+                        }}
 
                     try:
                         result = await self.client.call_tool(name, arguments)
@@ -217,8 +265,12 @@ Tools:
                             for block in result.content
                             if block.type == "text"
                         )
+                        if name == "scan_matrix":
+                            yield {"scan": {"action": "complete", "message": result_text}}
                     except Exception as exc:
                         result_text = f"Tool failed: {exc}"
+                        if name == "scan_matrix":
+                            yield {"scan": {"action": "error", "message": result_text}}
 
                     self.conversation_history.append({
                         "role": "tool",
@@ -273,7 +325,8 @@ async def chat(request: MessageRequest):
         print(f"[DEBUG] Starting stream for message: '{message}'")
         async for chunk in agent.send_message_stream(message):
             print(f"[DEBUG] Sending chunk to client: '{chunk}'")
-            yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            payload = chunk if isinstance(chunk, dict) else {"chunk": chunk}
+            yield f"data: {json.dumps(payload)}\n\n"
         print("[DEBUG] Stream complete")
         yield "data: [DONE]\n\n"
 
