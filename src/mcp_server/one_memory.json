@@ -1,0 +1,24 @@
+[
+  {
+    "timestamp": "2026-11-14T18:50:43.519698+00:00",
+    "subject_key": "adam",
+    "statements": {
+      "suspicious_response": "Saw a person change into another.",
+      "observations": [
+        "Recursive billboard displays observer, including itself at increasing depth.",
+        "Witnessed a person change into another across from forty-one."
+      ]
+    },
+    "assessment": {
+      "name": "Adam",
+      "verdict": "no_supporting_evidence",
+      "suspicion_score": 0,
+      "evidence": [],
+      "limitations": [
+        "Statements are unverified claims.",
+        "The score is a fictional game mechanic, not a probability."
+      ],
+      "suggested_follow_up": "What have you experienced that you cannot explain?"
+    }
+  }
+]

@@ -8,7 +8,11 @@ let sessionId = null;
 let userName = null;
 
 // Start by asking for name
-addMessage("What is your name?");
+
+addMessage(
+  "Well, hello. Tell me your name. If you don't not want to reveal your identity, you can ask a question instead. " +
+  "Introduce yourself anytime by saying 'My name is' and your name."
+);
 
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -17,13 +21,11 @@ async function sendMessage() {
   addMessage(text, true);
   userInput.value = '';
 
-  if (!userName) {
-    userName = text;
-    sessionId = "user_" + userName.toLowerCase().replace(/\s+/g, "_") + "_" + Date.now();
-    await streamResponse("", userName); // send name on first message
-    return;
+  if (!sessionId) {
+    sessionId = "session_" + crypto.randomUUID();
   }
 
+  // Always send the actual message.
   await streamResponse(text);
 }
 

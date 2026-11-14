@@ -149,7 +149,9 @@ button:hover {
 }
 
 .glitch {
-  animation: glitch 1.2s infinite;
+  animation:
+    fadeIn 0.7s ease-out,
+    glitch 12s linear infinite;
 }
 
 .typing-text {
@@ -164,27 +166,28 @@ button:hover {
 }
 
 @keyframes glitch {
-  0% {
+  0%, 94%, 98%, 100% {
+    text-shadow: none;
+  }
+
+  95%, 97% {
     text-shadow: 2px 0 #0f0, -2px 0 #00ff41;
   }
 
-  20% {
+  96% {
     text-shadow: -2px 0 #0f0, 2px 0 #00ff41;
   }
+}
 
-  40% {
-    text-shadow: 2px 0 #0f0, -2px 0 #00ff41;
-  }
+/* Keep text clear while the reader hovers over it. */
+.glitch:hover {
+  animation-play-state: paused;
+  text-shadow: none;
+}
 
-  60% {
-    text-shadow: -2px 0 #0f0, 2px 0 #00ff41;
-  }
-
-  80% {
-    text-shadow: 2px 0 #0f0, -2px 0 #00ff41;
-  }
-
-  100% {
-    text-shadow: -2px 0 #0f0, 2px 0 #00ff41;
+@media (prefers-reduced-motion: reduce) {
+  .glitch {
+    animation: none;
+    text-shadow: none;
   }
 }

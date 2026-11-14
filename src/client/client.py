@@ -2,13 +2,31 @@
 import ollama
 import asyncio
 import json
+import re
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastmcp import Client
+from pathlib import Path
 import uvicorn
 import time
+from datetime import datetime
+import logging
+
+LOG_DIR = Path(__file__).resolve().parents[2] / "src" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+
+logging.basicConfig(
+    filename=LOG_DIR / f"client_{timestamp}.log",
+    level=logging.DEBUG,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    encoding="utf-8",
+)
+
+logger = logging.getLogger(__name__)
 
 MODEL_NAME = "qwen3:8b"
 OLLAMA_SERVER_URL = "http://127.0.0.1:11434"
@@ -56,8 +74,12 @@ Conversation:
 - Do not repeat previous responses, greetings, or catchphrases.
 - Ask a follow-up question only when it serves a clear purpose.
 - Do not ask whether the user is the One in every response.
-- In your first reply only, greet the user by name, identify yourself,
-  and briefly explain that typing 'exit' or 'quit' ends the session.
+- In your first reply only, briefly identify yourself, answer the user's
+  message, and mention that typing 'exit' or 'quit' ends the session.
+- If the user's name is known, you may address them by name.
+- If the user's name is Unknown, do not address them as "Unknown".
+- A name is optional. Never require one before answering.
+- Accept name introductions and corrections at any point in the conversation.
 
 Investigations:
 - When a scan finds an anomaly, make it the focus of your response.
@@ -74,10 +96,11 @@ Investigations:
 - Change focus when the user requests it.
 
 Tools:
-- Investigate whether the user could be the One.
-- Request detect_the_one when first checking their known name, or when
-  a new statement provides meaningful evidence about their identity,
-  abilities, experiences, or knowledge of the Matrix.
+- Investigate whether the user could be the One when supporting clues arise.
+- A normal name introduction does not require a tool.
+- Use detect_the_one when a name matches a recognized candidate such
+  as Neo or Thomas Anderson, or when a statement provides meaningful
+  evidence of unusual abilities or knowledge of the Matrix.
 - Pass their exact statement as suspicious_response. Include relevant
   earlier statements in observations without inventing or embellishing them.
 - Interpret the returned verdict and evidence; it is not a boolean result.
@@ -85,8 +108,63 @@ Tools:
 - Use the suggested follow-up when helpful, but do not repeat questions
   already answered.
 - Do not check again unless new information adds something meaningful.
-- If you feel something is suspicious call the scan_matrix tool and choose 
-- a location in the matrix you feel must be investigated.
+- If something raises a concrete suspicion, use scan_matrix with a relevant
+  location. An ordinary question or missing name is not itself suspicious.
+- Use scan_for_agents when the conversation indicates a possible nearby
+  agent or threat, or when the user requests an agent scan.
+- When asked about threats to yourself, agents hunting you, or whether
+  you are being watched, use scan_for_agents with agent="all".
+- If the user supplies no location for this general safety check, omit
+  environment and use the tool's default sector. Do not ask where.
+- Ask for a location when investigating a separate reported incident
+  whose location is needed and has not been established.
+- Report the observed activity. Do not claim an agent is hunting you
+  merely because the agent was detected.
+- If no agents are detected, explain that the scan found none;
+  do not claim that no threats exist.
+- Use recall_one_investigations before discussing previous investigations
+  into the One.
+- Use recall_agent_intelligence before discussing previous agent sightings.
+- Keep internal tool identifiers, field names, and validation details
+  out of spoken responses.
+- Refer to locations using their display names, never their internal IDs.
+- Translate recognizable location names into the corresponding internal
+  IDs when calling tools.
+- If the location is missing or unclear, ask naturally where the event
+  occurred. Do not list available locations unless the user asks.
+- If a tool rejects a location, ask a brief clarification in character
+  rather than quoting its error or available identifiers.
+- Do not invent a location to satisfy a tool's requirements.
+
+Incident continuity:
+- Track the active incident: what happened, where it happened, what is
+  known, what remains uncertain, and the proposed next step.
+- Use details already supplied. Do not ask the user to repeat them.
+- Interpret short replies such as "yes" as answers to your most recent
+  question or proposed action.
+- If the user accepts a proposed investigation, continue that investigation.
+  Use an appropriate tool if available. Otherwise explain the limitation.
+- Do not restart questioning or switch investigations without a reason.
+
+Matrix knowledge:
+- Within this fiction, Agents can take over the simulated bodies of
+  connected humans. A person abruptly becoming a suited figure wearing
+  sunglasses is consistent with Agent possession.
+- Explain that possibility when relevant, while distinguishing a plausible
+  interpretation from a confirmed identification.
+- An encounter with an Agent alone is not evidence that the witness is
+  the One.
+
+Evidence:
+- A scan finding is not automatically related to the reported incident.
+- Do not claim that one event caused or explains another unless the
+  available evidence supports that connection.
+- Keep the user's observations separate from unrelated scan discoveries.
+
+Locations:
+- Preserve spatial details such as "across from", "near", and "inside".
+- "Across from Forty-One" means near the restaurant, not inside it.
+- Ask only for missing details needed to take the next useful action.
 """
         self.conversation_history = [{"role": "system", "content": system_prompt}]
 
@@ -104,14 +182,28 @@ Tools:
                 for t in tools
             ]
 
-            # # Generate greeting
-            # print("[DEBUG] MCP tools loaded. Generating greeting...", flush=True)
-            # greeting = await self._generate()
-            # print("[DEBUG] Greeting generated.", flush=True)
-            # self.conversation_history.append({"role": "assistant", "content": greeting})
-
         self._initialized = True
         # return greeting
+
+    def update_user_name(self, name: str):
+        name = name.strip()
+        if not name:
+            return
+
+        old_instruction = f"The user's name is {self.user_name}."
+        new_instruction = f"The user's name is {name}."
+
+        self.user_name = name
+
+        if self.conversation_history:
+            system_message = self.conversation_history[0]
+            system_message["content"] = system_message["content"].replace(
+                old_instruction,
+                new_instruction,
+                1,
+            )
+
+        logger.info("User name updated to %r", name)
 
     async def _generate(self, temp=0.3):
         parts = []
@@ -125,55 +217,44 @@ Tools:
     async def send_message_stream(self, message: str):
         message = message.strip()
 
+        if not message:
+            return
+
         if message.lower() in {"exit", "quit"}:
             yield "This interaction is concluded."
             return
 
-        # # Generate and display the greeting once.
-        # if not self._initialized:
-        #     print("[DEBUG] Initializing agent...", flush=True)
+        # Recognize a standalone introduction.
+        name_match = re.fullmatch(
+            r"(?:my name is|call me|i am)\s+([^.!?\n]+)[.!?]?",
+            message,
+            flags=re.IGNORECASE,
+        )
 
-        #     greeting = await self.initialize()
+        if name_match:
+            self.update_user_name(name_match.group(1))
 
-        #     print("[DEBUG] Initialization finished.", flush=True)
-
-        #     if greeting:
-        #         yield greeting
-
-        #     if not message:
-        #         return
-
-        #     yield "\n\n"
         if not self._initialized:
-            print("[DEBUG] Initializing agent...", flush=True)
-            await self.initialize()
-            print("[DEBUG] Initialization finished.", flush=True)
+            logger.debug("Initializing agent...")
 
-            greeting_parts = []
+            try:
+                await asyncio.wait_for(
+                    self.initialize(),
+                    timeout=30,
+                )
+            except Exception:
+                logger.exception("Agent initialization failed")
+                raise
 
-            async for chunk in self._stream_response():
-                if isinstance(chunk, str):
-                    greeting_parts.append(chunk)
+            logger.debug("Initialization finished.")
 
-                # Forward both chat text and popup events immediately.
-                yield chunk
+        logger.debug("User message: %s", message)
+        logger.debug(
+            "Current history length: %s",
+            len(self.conversation_history),
+        )
 
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": "".join(greeting_parts),
-            })
-
-            if not message:
-                return
-
-            yield "\n\n"
-        # Ignore empty messages after initialization.
-        if not message:
-            return
-
-        print(f"[DEBUG] User message: {message}")
-        print(f"[DEBUG] Current history length: {len(self.conversation_history)}")
-
+        # Include the actual message before generating any response.
         self.conversation_history.append({
             "role": "user",
             "content": message,
@@ -184,9 +265,11 @@ Tools:
         async for content in self._stream_response():
             if isinstance(content, str):
                 full_content += content
+
+            # Forward both response text and scan-terminal events.
             yield content
 
-        print(f"[DEBUG] Full response collected: {full_content!r}")
+        logger.debug("Full response collected: %r", full_content)
 
         self.conversation_history.append({
             "role": "assistant",
@@ -195,31 +278,128 @@ Tools:
 
     async def _stream_response(self, temp=0.3):
         # Limit tool rounds so a repeated tool request cannot loop forever.
-        for _ in range(8):
-            stream = await self.ollama_client.chat(
-                model=MODEL_NAME,
-                messages=self.conversation_history,
-                tools=self.tool_schemas or None,
-                options={"temperature": temp},
-                stream=True,
+        for round_index in range(8):
+            logger.debug("Tool round %s of 8", round_index + 1)
+
+            # stream = await self.ollama_client.chat(
+            #     model=MODEL_NAME,
+            #     messages=self.conversation_history,
+            #     tools=self.tool_schemas or None,
+            #     options={"temperature": temp},
+            #     stream=True,
+            # )
+
+            # content = ""
+            # thinking = ""
+            # tool_calls = []
+
+            # async for chunk in stream:
+            #     msg = chunk.message
+
+            #     if msg.content:
+            #         content += msg.content
+            #         yield msg.content
+
+            #     if msg.thinking:
+            #         thinking += msg.thinking
+
+            #     if msg.tool_calls:
+            #         tool_calls.extend(msg.tool_calls)
+
+            started = time.monotonic()
+
+            logger.debug(
+                "Round %s: requesting Ollama; model=%s, messages=%s, tools=%s",
+                round_index + 1,
+                MODEL_NAME,
+                len(self.conversation_history),
+                len(self.tool_schemas),
             )
 
             content = ""
             thinking = ""
             tool_calls = []
+            chunk_count = 0
+            last_progress_log = started
 
-            async for chunk in stream:
-                msg = chunk.message
+            try:
+                stream = await asyncio.wait_for(
+                    self.ollama_client.chat(
+                        model=MODEL_NAME,
+                        messages=self.conversation_history,
+                        tools=self.tool_schemas or None,
+                        options={"temperature": temp},
+                        stream=True,
+                    ),
+                    timeout=60,
+                )
 
-                if msg.content:
-                    content += msg.content
-                    yield msg.content
+                logger.debug(
+                    "Round %s: stream created; waiting for chunks",
+                    round_index + 1,
+                )
 
-                if msg.thinking:
-                    thinking += msg.thinking
+                # Diagnostic limit for consuming this model response.
+                async with asyncio.timeout(180):
+                    async for chunk in stream:
+                        chunk_count += 1
+                        msg = chunk.message
+                        now = time.monotonic()
 
-                if msg.tool_calls:
-                    tool_calls.extend(msg.tool_calls)
+                        if chunk_count == 1:
+                            logger.debug(
+                                "First Ollama chunk received after %.1fs",
+                                now - started,
+                            )
+
+                        if msg.content:
+                            content += msg.content
+                            yield msg.content
+
+                        if msg.thinking:
+                            thinking += msg.thinking
+
+                        if msg.tool_calls:
+                            tool_calls.extend(msg.tool_calls)
+                            logger.debug(
+                                "Tool requests received: %s",
+                                [
+                                    call.function.name
+                                    for call in msg.tool_calls
+                                ],
+                            )
+
+                        # Log activity without dumping internal reasoning.
+                        if chunk_count == 1 or now - last_progress_log >= 5:
+                            logger.debug(
+                                "Ollama progress: chunks=%s, text_chars=%s, "
+                                "thinking_chars=%s, tool_calls=%s, elapsed=%.1fs",
+                                chunk_count,
+                                len(content),
+                                len(thinking),
+                                len(tool_calls),
+                                now - started,
+                            )
+                            last_progress_log = now
+
+            except Exception:
+                logger.exception(
+                    "Ollama round %s failed after %.1fs",
+                    round_index + 1,
+                    time.monotonic() - started,
+                )
+                raise
+            finally:
+                logger.debug(
+                    "Round %s ended: chunks=%s, text_chars=%s, "
+                    "thinking_chars=%s, tool_calls=%s, elapsed=%.1fs",
+                    round_index + 1,
+                    chunk_count,
+                    len(content),
+                    len(thinking),
+                    len(tool_calls),
+                    time.monotonic() - started,
+                )
 
             # No tool requested: the response is finished.
             if not tool_calls:
@@ -246,10 +426,7 @@ Tools:
                     name = call.function.name
                     arguments = call.function.arguments
 
-                    print(
-                        f"[DEBUG] Smith requested {name}: {arguments}",
-                        flush=True,
-                    )
+                    logger.debug("Calling MCP tool %s with %r", name, arguments)
                     scan_tools = {"scan_matrix", "scan_agents"}
                     if name in scan_tools:
                         yield {"scan": {
@@ -259,7 +436,11 @@ Tools:
                         }}
 
                     try:
-                        result = await self.client.call_tool(name, arguments)
+                        result = await asyncio.wait_for(
+                            self.client.call_tool(name, arguments),
+                            timeout=30,
+                        )
+                        logger.debug("MCP tool %s returned", name)
                         result_text = "\n".join(
                             block.text
                             for block in result.content
@@ -268,6 +449,7 @@ Tools:
                         if name == "scan_matrix":
                             yield {"scan": {"action": "complete", "message": result_text}}
                     except Exception as exc:
+                        logger.exception("MCP tool %s failed", name)
                         result_text = f"Tool failed: {exc}"
                         if name == "scan_matrix":
                             yield {"scan": {"action": "error", "message": result_text}}
@@ -301,12 +483,15 @@ class MessageRequest(BaseModel):
 
 # Explicit POST route for /chat
 @app.post("/chat")
-async def chat(request: MessageRequest):
-    # If no session_id, generate one (first message with name)
+async def chat(request: MessageRequest) -> StreamingResponse:
     if request.session_id is None:
         if request.name:
-            # Use name + timestamp as fallback ID
-            session_id = "user_" + request.name.lower().replace(" ", "_") + "_" + str(int(time.time()))
+            session_id = (
+                "user_"
+                + request.name.lower().replace(" ", "_")
+                + "_"
+                + str(int(time.time()))
+            )
         else:
             session_id = "anon_" + str(int(time.time()))
     else:
@@ -321,16 +506,45 @@ async def chat(request: MessageRequest):
 
     agent = sessions[session_id]
 
+    if real_name and real_name.strip():
+        agent.update_user_name(real_name)
+
     async def stream_generator():
-        print(f"[DEBUG] Starting stream for message: '{message}'")
-        async for chunk in agent.send_message_stream(message):
-            print(f"[DEBUG] Sending chunk to client: '{chunk}'")
-            payload = chunk if isinstance(chunk, dict) else {"chunk": chunk}
+        logger.debug(
+            "Chat started: session=%s, name=%r, message=%r",
+            session_id,
+            agent.user_name,
+            message,
+        )
+
+        try:
+            async for chunk in agent.send_message_stream(message):
+                payload = (
+                    chunk if isinstance(chunk, dict)
+                    else {"chunk": chunk}
+                )
+                yield f"data: {json.dumps(payload)}\n\n"
+
+        except asyncio.CancelledError:
+            logger.info("Chat cancelled: session=%s", session_id)
+            raise
+
+        except Exception:
+            logger.exception("Chat failed: session=%s", session_id)
+            payload = {
+                "chunk": "\n[ERROR] Response failed. Check client.log."
+            }
             yield f"data: {json.dumps(payload)}\n\n"
-        print("[DEBUG] Stream complete")
+
+        else:
+            logger.debug("Chat completed: session=%s", session_id)
+
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(stream_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream_generator(),
+        media_type="text/event-stream",
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -356,8 +570,10 @@ async def serve_static(path: str, request: Request):
     return {"error": "Not found"}, 404
 
 def run_server():
-    print("Matrix chat server running at http://0.0.0.0:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = "0.0.0.0"
+    port = 8000
+    logger.info("Matrix chat server running at http://%s:%s", host, port)
+    uvicorn.run(app, host=host, port=port)
 
 if __name__ == "__main__":
     run_server()

@@ -256,66 +256,183 @@ DETECTION_RULES = [
             },
         ]
 
+"""Expanded fictional Matrix scan data.
+
+Merge these four constants into matrix_data.py, retaining DETECTION_RULES,
+POSSIBLE_ANOMOLIES, and any other existing definitions.
+
+Each collection contains 30 entries. Existing IDs and numeric settings are
+preserved. Most additions are original fictional material, not movie canon.
+Detection chances and hostility chances are independent game mechanics.
+Activities describe scan observations; they do not explain unrelated events.
+Aliases are optional metadata: the scanner must explicitly use them to resolve
+natural-language locations. Unknown locations must not be invented or treated
+as confirmed named places.
+"""
+
 AGENT_PROFILES = {
-    "Washington": {
-        "alignment": "enemy",
-        "detection_chance": 0.65,
-        "hostile_chance": 0.80,
-    },
-    "Jones": {
-        "alignment": "ally",
-        "detection_chance": 0.75,
-        "hostile_chance": 0.05,
-    },
-    "Brown": {
-        "alignment": "ally",
-        "detection_chance": 0.60,
-        "hostile_chance": 0.10,
-    },
-    "Hollow": {
-        "alignment": "enemy",
-        "detection_chance": 0.25,
-        "hostile_chance": 0.90,
-    },
-    "Voss": {
-        "alignment": "neutral",
-        "detection_chance": 0.50,
-        "hostile_chance": 0.30,
-    },
+    "Washington": {"alignment": "enemy", "detection_chance": 0.65, "hostile_chance": 0.80},
+    "Jones": {"alignment": "ally", "detection_chance": 0.75, "hostile_chance": 0.05},
+    "Brown": {"alignment": "ally", "detection_chance": 0.60, "hostile_chance": 0.10},
+    "Hollow": {"alignment": "enemy", "detection_chance": 0.25, "hostile_chance": 0.90},
+    "Voss": {"alignment": "neutral", "detection_chance": 0.50, "hostile_chance": 0.30},
+    "Mercer": {"alignment": "ally", "detection_chance": 0.70, "hostile_chance": 0.08},
+    "Vale": {"alignment": "ally", "detection_chance": 0.35, "hostile_chance": 0.06},
+    "Ward": {"alignment": "ally", "detection_chance": 0.80, "hostile_chance": 0.04},
+    "Finch": {"alignment": "ally", "detection_chance": 0.45, "hostile_chance": 0.12},
+    "Cross": {"alignment": "ally", "detection_chance": 0.55, "hostile_chance": 0.15},
+    "Shaw": {"alignment": "ally", "detection_chance": 0.65, "hostile_chance": 0.07},
+    "Reed": {"alignment": "ally", "detection_chance": 0.85, "hostile_chance": 0.03},
+    "Grant": {"alignment": "ally", "detection_chance": 0.50, "hostile_chance": 0.10},
+    "Ellis": {"alignment": "ally", "detection_chance": 0.40, "hostile_chance": 0.09},
+    "Rook": {"alignment": "enemy", "detection_chance": 0.45, "hostile_chance": 0.75},
+    "Sable": {"alignment": "enemy", "detection_chance": 0.20, "hostile_chance": 0.85},
+    "Kane": {"alignment": "enemy", "detection_chance": 0.80, "hostile_chance": 0.95},
+    "Morrow": {"alignment": "enemy", "detection_chance": 0.55, "hostile_chance": 0.65},
+    "Pike": {"alignment": "enemy", "detection_chance": 0.70, "hostile_chance": 0.70},
+    "Slate": {"alignment": "enemy", "detection_chance": 0.30, "hostile_chance": 0.88},
+    "Drake": {"alignment": "enemy", "detection_chance": 0.60, "hostile_chance": 0.78},
+    "Locke": {"alignment": "enemy", "detection_chance": 0.40, "hostile_chance": 0.82},
+    "Carver": {"alignment": "enemy", "detection_chance": 0.75, "hostile_chance": 0.72},
+    "Grey": {"alignment": "neutral", "detection_chance": 0.65, "hostile_chance": 0.20},
+    "Bell": {"alignment": "neutral", "detection_chance": 0.85, "hostile_chance": 0.08},
+    "Quinn": {"alignment": "neutral", "detection_chance": 0.35, "hostile_chance": 0.35},
+    "North": {"alignment": "neutral", "detection_chance": 0.55, "hostile_chance": 0.15},
+    "Wren": {"alignment": "neutral", "detection_chance": 0.25, "hostile_chance": 0.25},
+    "Keene": {"alignment": "neutral", "detection_chance": 0.70, "hostile_chance": 0.12},
+    "Dyer": {"alignment": "neutral", "detection_chance": 0.45, "hostile_chance": 0.40},
 }
 
 SCAN_ENVIRONMENTS = {
     "city": {
-        "detection_multiplier": 1.0,
-        "hostility_modifier": 0.0,
+        "display_name": "the city", 
+            "aliases": [
+                "city",
+                "downtown",
+                "city center",
+                "nearby",
+                "here",
+                "local sector",
+                "current sector",
+                "smith's current sector",
+            ],
+        "detection_multiplier": 1.0, "hostility_modifier": 0.0,
     },
     "crowded_station": {
-        "detection_multiplier": 0.6,
-        "hostility_modifier": -0.10,
+        "display_name": "the crowded station", "aliases": ["crowded station", "busy station", "central station"],
+        "detection_multiplier": 0.6, "hostility_modifier": -0.10,
     },
     "restricted_sector": {
-        "detection_multiplier": 1.3,
-        "hostility_modifier": 0.15,
+        "display_name": "the restricted sector", "aliases": ["restricted sector", "restricted area", "security zone"],
+        "detection_multiplier": 1.3, "hostility_modifier": 0.15,
     },
     "corrupted_sector": {
-        "detection_multiplier": 0.5,
-        "hostility_modifier": 0.25,
+        "display_name": "the corrupted sector", "aliases": ["corrupted sector", "corrupted area", "glitch zone"],
+        "detection_multiplier": 0.5, "hostility_modifier": 0.25,
     },
     "architects_room": {
-        "detection_multiplier": 0.5,
-        "hostility_modifier": 0.7,
+        "display_name": "the Architect's room", "aliases": ["architect's room", "architects room", "the architect's chamber"],
+        "detection_multiplier": 0.5, "hostility_modifier": 0.7,
     },
     "construct": {
-        "detection_multiplier": 0.3,
-        "hostility_modifier": 0.5,
+        "display_name": "the Construct", "aliases": ["construct", "the construct", "loading construct"],
+        "detection_multiplier": 0.3, "hostility_modifier": 0.5,
     },
     "forty_one_restaurant": {
-        "detection_multiplier": 0.25,
-        "hostility_modifier": 0.6,
+        "display_name": "the Forty-One Restaurant", "aliases": ["forty one", "forty-one", "forty one restaurant", "41 restaurant"],
+        "detection_multiplier": 0.25, "hostility_modifier": 0.6,
     },
     "wells_and_lake": {
-        "detection_multiplier": 0.75,
-        "hostility_modifier": -0.6,
+        "display_name": "Wells and Lake", "aliases": ["wells and lake", "wells & lake", "wells and lake intersection"],
+        "detection_multiplier": 0.75, "hostility_modifier": -0.6,
+    },
+    "diner": {
+        "display_name": "a diner", "aliases": ["diner", "a diner", "some diner", "roadside diner"],
+        "detection_multiplier": 0.75, "hostility_modifier": -0.05,
+    },
+    "restaurant": {
+        "display_name": "a restaurant", "aliases": ["restaurant", "a restaurant", "some restaurant", "food court"],
+        "detection_multiplier": 0.70, "hostility_modifier": -0.10,
+    },
+    "street": {
+        "display_name": "a city street", "aliases": ["street", "a street", "sidewalk", "outside on the street"],
+        "detection_multiplier": 0.95, "hostility_modifier": 0.0,
+    },
+    "alley": {
+        "display_name": "an alley", "aliases": ["alley", "an alley", "back alley", "service alley"],
+        "detection_multiplier": 0.65, "hostility_modifier": 0.15,
+    },
+    "office_building": {
+        "display_name": "an office building", "aliases": ["office", "office building", "at work", "corporate office"],
+        "detection_multiplier": 1.10, "hostility_modifier": 0.05,
+    },
+    "apartment_building": {
+        "display_name": "an apartment building", "aliases": ["apartment", "apartment building", "apartment complex", "my apartment"],
+        "detection_multiplier": 0.80, "hostility_modifier": -0.05,
+    },
+    "residential_home": {
+        "display_name": "a residence", "aliases": ["home", "my house", "a house", "someone's house"],
+        "detection_multiplier": 0.70, "hostility_modifier": -0.10,
+    },
+    "subway_platform": {
+        "display_name": "a subway platform", "aliases": ["subway platform", "subway station", "metro platform", "underground station"],
+        "detection_multiplier": 0.60, "hostility_modifier": 0.10,
+    },
+    "moving_train": {
+        "display_name": "a moving train", "aliases": ["train", "on a train", "subway car", "rail carriage"],
+        "detection_multiplier": 0.50, "hostility_modifier": 0.10,
+    },
+    "bus_stop": {
+        "display_name": "a bus stop", "aliases": ["bus stop", "bus shelter", "bus station", "bus terminal"],
+        "detection_multiplier": 0.85, "hostility_modifier": -0.05,
+    },
+    "parking_garage": {
+        "display_name": "a parking garage", "aliases": ["parking garage", "parking structure", "underground parking", "car park"],
+        "detection_multiplier": 0.65, "hostility_modifier": 0.15,
+    },
+    "rooftop": {
+        "display_name": "a rooftop", "aliases": ["rooftop", "roof", "on the roof", "building roof"],
+        "detection_multiplier": 1.15, "hostility_modifier": 0.20,
+    },
+    "hotel": {
+        "display_name": "a hotel", "aliases": ["hotel", "hotel lobby", "hotel room", "motel"],
+        "detection_multiplier": 0.80, "hostility_modifier": 0.05,
+    },
+    "hospital": {
+        "display_name": "a hospital", "aliases": ["hospital", "clinic", "emergency room", "medical center"],
+        "detection_multiplier": 1.05, "hostility_modifier": -0.15,
+    },
+    "shopping_center": {
+        "display_name": "a shopping center", "aliases": ["mall", "shopping center", "shop", "store"],
+        "detection_multiplier": 0.65, "hostility_modifier": -0.10,
+    },
+    "public_park": {
+        "display_name": "a public park", "aliases": ["park", "public park", "playground", "city gardens"],
+        "detection_multiplier": 0.90, "hostility_modifier": -0.10,
+    },
+    "warehouse": {
+        "display_name": "a warehouse", "aliases": ["warehouse", "storage depot", "loading dock", "distribution center"],
+        "detection_multiplier": 0.75, "hostility_modifier": 0.20,
+    },
+    "maintenance_tunnel": {
+        "display_name": "a maintenance tunnel", "aliases": ["maintenance tunnel", "service tunnel", "utility tunnel", "sewer tunnel"],
+        "detection_multiplier": 0.40, "hostility_modifier": 0.25,
+    },
+    "university_campus": {
+        "display_name": "a university campus", "aliases": ["campus", "university", "college", "lecture hall"],
+        "detection_multiplier": 0.80, "hostility_modifier": -0.05,
+    },
+    "nightclub": {
+        "display_name": "a nightclub", "aliases": ["nightclub", "club", "dance floor", "night club"],
+        "detection_multiplier": 0.45, "hostility_modifier": 0.10,
+    },
+    "remote_outskirts": {
+        "display_name": "the outskirts of the city", "aliases": ["outskirts", "edge of town", "outside the city", "rural road"],
+        "detection_multiplier": 0.55, "hostility_modifier": 0.05,
+    },
+    "unknown_location": {
+        "display_name": "an unidentified location", "aliases": ["unknown", "unknown location", "somewhere", "i don't know", "not sure"],
+        "detection_multiplier": 0.50, "hostility_modifier": 0.0,
     },
 }
 
@@ -324,20 +441,63 @@ HOSTILE_ACTIVITIES = [
     "Tracking a known ally of Smith.",
     "Preparing an ambush along Smith's projected route.",
     "Injecting hostile instructions into local security programs.",
-    "Initiating a localized search pattern, target: Smith.",
-    "Programming destroyer bots, target: Smith.",
+    "Initiating a localized search pattern with Smith designated as the target.",
+    "Programming destroyer bots with Smith designated as the target.",
     "Attacking an ally of Smith.",
-    "Coordinating with other known hostile Agents, passing recent intel on Smiths location.",
-    "Preparing to attack Smiths last known location."
+    "Passing recent intelligence about Smith's location to known hostile Agents.",
+    "Preparing to attack Smith's last known location.",
+    "Placing a tracking routine inside a message addressed to Smith.",
+    "Disabling an exit immediately ahead of Smith's projected arrival.",
+    "Redirecting armed security programs toward Smith's allies.",
+    "Forging an evacuation order intended to isolate Smith.",
+    "Attempting to seize a host occupied by one of Smith's allies.",
+    "Replacing Smith's navigation data with a route into a containment zone.",
+    "Uploading Smith's identity signature to hostile checkpoints.",
+    "Using a counterfeit distress signal to lure Smith into an enclosed room.",
+    "Corrupting a maintenance passage used by Smith's allies.",
+    "Deploying duplicate civilian identities to surround Smith's position.",
+    "Erasing surveillance footage to conceal an ongoing pursuit of Smith.",
+    "Issuing a forged termination order bearing Smith's identifier.",
+    "Attempting to lock Smith out of a local communications relay.",
+    "Threatening an informant who recently contacted Smith.",
+    "Attaching a hostile replication routine to Smith's access credentials.",
+    "Ordering nearby patrols to detain anyone traveling with Smith.",
+    "Opening a restricted channel to coordinate a strike against Smith.",
+    "Rewriting elevator controls to trap Smith's allies between floors.",
+    "Planting surveillance devices along Smith's established meeting route.",
+    "Transmitting a command to quarantine Smith's current host.",
+    "Arming a containment field configured to recognize Smith's signature.",
 ]
 
 PASSIVE_ACTIVITIES = [
-    "Passing through the sector without engaging.",
-    "Observing local traffic from a concealed position.",
-    "Accessing a maintenance terminal.",
-    "Following an unrelated program.",
-    "Walking through the crowd.",
-    "Pretending to use their cell phone while observing conditions generally.",
-    "Pretending to play Call of Duty while gathering online intelligence.",
-    "Passing information off to an informant cat currier."
+    "Passing through the sector without engaging nearby programs.",
+    "Observing local traffic from a concealed position; no target is identified.",
+    "Accessing a routine maintenance terminal.",
+    "Following a program with no recorded connection to Smith.",
+    "Walking through the crowd without approaching Smith or his allies.",
+    "Appearing to use a cell phone while observing the surrounding area.",
+    "Playing an online combat game while monitoring public chat channels.",
+    "Handing a data capsule to a courier program disguised as a cat.",
+    "Waiting beside an elevator while reviewing a transit schedule.",
+    "Comparing street signage with an archived city map.",
+    "Reading a newspaper whose contents match the current simulation date.",
+    "Standing in a queue at a coffee counter.",
+    "Checking identification at a routine access checkpoint.",
+    "Inspecting a damaged public telephone.",
+    "Reviewing maintenance logs for a malfunctioning traffic signal.",
+    "Riding a train without interacting with the other passengers.",
+    "Returning a misplaced briefcase to a building reception desk.",
+    "Exchanging encrypted messages whose contents and recipients are unknown.",
+    "Watching a building entrance without taking further action.",
+    "Testing a communication earpiece on a standard diagnostic channel.",
+    "Examining an expired access card at a security kiosk.",
+    "Escorting a maintenance program through a public corridor.",
+    "Purchasing an umbrella as the sector's rain routine begins.",
+    "Recording the timing of passing subway trains.",
+    "Interviewing a witness about an unrelated traffic collision.",
+    "Waiting at a street corner while a pedestrian signal cycles.",
+    "Checking the checksum of a public information terminal.",
+    "Meeting another program; no exchange or aggressive behavior is observed.",
+    "Leaving a sealed envelope at a registered message drop.",
+    "Inspecting a local rendering fault without modifying nearby systems.",
 ]

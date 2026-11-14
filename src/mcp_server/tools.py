@@ -4,10 +4,13 @@ import operator
 import json
 import asyncio
 import random
+import logging
 from fastmcp import FastMCP
 
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from matrix_data import (
         POSSIBLE_ANOMOLIES, 
@@ -63,13 +66,48 @@ def save_one_memory(records):
     temporary_file.replace(ONE_MEMORY_FILE)
 
 
+def resolve_environment(value: str) -> str | None:
+    def normalize(text: str) -> str:
+        text = text.casefold().replace("’", "'")
+        text = text.replace("_", " ").replace("-", " ")
+        return " ".join(text.split())
+
+    requested = normalize(value)
+
+    for key, environment in SCAN_ENVIRONMENTS.items():
+        names = [
+            key,
+            environment["display_name"],
+            *environment.get("aliases", []),
+        ]
+
+        if any(requested == normalize(name) for name in names):
+            return key
+
+    return None
+
+from collections import deque
+
+recent_activities = deque(maxlen=8)
+
+
+def choose_activity(activities: list[str]) -> str:
+    available = [
+        activity for activity in activities
+        if activity not in recent_activities
+    ]
+
+    activity = random.choice(available or activities)
+    recent_activities.append(activity)
+    return activity
+
 def register_tools(mcp: FastMCP):
     @mcp.tool(
         name="add_numbers",
         description="Adds two integers together and returns the result."  # ← very important!
     )
     def add_numbers(numbers: List[int]) -> int:
-        print(f"Summing numbers: {numbers}")
+        logger.info("[TOOL Executed] add_numbers -> %s", numbers)
         if not numbers:
             return 0
         return sum(int(n) for n in numbers)
@@ -82,7 +120,7 @@ def register_tools(mcp: FastMCP):
         """
         Multiplies a list of integers together and returns the result.
         """
-        print("Using the multiply_numbers function")
+        logger.info("[TOOL Executed] multiply_numbers -> %s", numbers)
 
         if not numbers:
             return 1
@@ -102,7 +140,7 @@ def register_tools(mcp: FastMCP):
         Divides the first number by each subsequent number.
         Example: [100, 2, 5] -> 100 / 2 / 5 = 10.0
         """
-        print("Using the divide_numbers function")
+        logger.info("[TOOL EXECUTED] divide_numbers -> %s", numbers)
 
         if len(numbers) < 2:
             raise ValueError("divide_numbers requires at least two numbers")
@@ -119,6 +157,9 @@ def register_tools(mcp: FastMCP):
     @mcp.tool(
         name="detect_the_one",
         description=(
+            "Use when statements suggest the person's own unusual abilities "
+            "or exceptional knowledge of the Matrix. Merely witnessing an Agent" 
+            "or a transformation is not sufficient reason to call this tool."
             "Investigate whether someone may be the One in a fictional "
             "Matrix conversation. Use when a name or statement raises "
             "suspicion, including unusual abilities, knowledge of the Matrix, "
@@ -222,10 +263,7 @@ def register_tools(mcp: FastMCP):
             "suggested_follow_up": follow_up,
         }
 
-        print(
-            f"[TOOL EXECUTED] detect_the_one -> {result}",
-            flush=True,
-        )
+        logger.info("[TOOL EXECUTED] detect_the_one -> %s", result)
 
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -243,7 +281,6 @@ def register_tools(mcp: FastMCP):
             save_one_memory(memory)
 
         return result
-        return result
 
     @mcp.tool(
         name="scan_matrix",
@@ -257,7 +294,7 @@ def register_tools(mcp: FastMCP):
         import asyncio
         import random
 
-        print(f"[TOOL EXECUTED] scan_matrix: {location}", flush=True)
+        logger.info("[TOOL EXECUTED] scan_matrix -> %s", location)
 
         await asyncio.sleep(3)
 
@@ -282,24 +319,45 @@ def register_tools(mcp: FastMCP):
     @mcp.tool(
         name="scan_for_agents",
         description=(
-            "Run a fictional scan for agents near Smith. "
-            "Environmental conditions affect detection and hostile behavior. "
-            "Use agent='all' to search for every registered agent. "
-            "Defaults to Smith's arch rival, Washington. "
+            "Scan for agents who may threaten Smith or his allies. "
+            "Use when the user asks whether Smith is in danger, being watched, "
+            "being hunted, or pursued by other agents. "
+            "For a general threat check, use agent='all'. "
+            "If no location is supplied, omit environment to scan Smith's "
+            "current sector, which defaults to city. "
+            "Do not require the user to supply a location for Smith's own "
+            "general threat check. "
+            "Use a specific agent name only when investigating that agent. "
             "Findings are saved to persistent intelligence memory."
         ),
     )
     async def scan_for_agents(
-        agent: str = "Washington",
+        agent: str = "all",
         environment: str = "city",
     ) -> dict:
-        conditions = SCAN_ENVIRONMENTS.get(environment)
+        requested_environment = environment
+        environment_key = resolve_environment(environment)
+
+        conditions = (
+            SCAN_ENVIRONMENTS[environment_key]
+            if environment_key is not None
+            else None
+        )
 
         if conditions is None:
             return {
-                "error": "Unknown environment.",
-                "valid_environments": list(SCAN_ENVIRONMENTS),
+                "error": "The location could not be matched.",
+                "available_locations": [
+                    {
+                        "id": key,
+                        "display_name": value["display_name"],
+                    }
+                    for key, value in SCAN_ENVIRONMENTS.items()
+                ],
+                "suggested_follow_up": "Where did this happen?",
             }
+
+        environment = environment_key
 
         # Resolve names without requiring exact capitalization.
         if agent.casefold() == "all":
@@ -321,9 +379,10 @@ def register_tools(mcp: FastMCP):
 
             targets = {matched_name: AGENT_PROFILES[matched_name]}
 
-        print(
-            f"[TOOL EXECUTED] scan_for_agents: {agent}, {environment}",
-            flush=True,
+        logger.info(
+            "[TOOL EXECUTED] scan_for_agents -> %s, %s",
+            agent,
+            environment,
         )
 
         await asyncio.sleep(3)
@@ -358,7 +417,7 @@ def register_tools(mcp: FastMCP):
                 "agent": name,
                 "alignment": profile["alignment"],
                 "threat": threat,
-                "activity": random.choice(
+                "activity": choose_activity(
                     HOSTILE_ACTIVITIES if threat else PASSIVE_ACTIVITIES
                 ),
             })
@@ -366,7 +425,9 @@ def register_tools(mcp: FastMCP):
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "requested_agent": agent,
+            "requested_environment": requested_environment,  # "Forty-One"
             "environment": environment,
+            "location_name": conditions["display_name"],
             "threat": any(item["threat"] for item in findings),
             "message": (
                 f"Detected {len(findings)} agent(s)."
@@ -395,6 +456,7 @@ def register_tools(mcp: FastMCP):
     async def recall_agent_intelligence(
         agent: str = "all",
     ) -> dict:
+        logger.info("[TOOL EXECUTION] recall_agent_intelligence -> %s", agent)
         async with agent_memory_lock:
             records = load_agent_memory()
 
@@ -420,6 +482,7 @@ def register_tools(mcp: FastMCP):
         ),
     )
     async def recall_one_investigations(name: str = "") -> dict:
+        logger.info("[TOOL EXECUTION] recall_one_investigations -> %s", name)
         subject_key = " ".join(
             name.casefold().replace("’", "'").split()
         )
