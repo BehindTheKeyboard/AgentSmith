@@ -13,6 +13,7 @@ import uvicorn
 import time
 from datetime import datetime
 import logging
+from fastapi.responses import FileResponse
 
 LOG_DIR = Path(__file__).resolve().parents[2] / "src" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -554,6 +555,14 @@ async def serve_index():
             return f.read()
     except FileNotFoundError:
         return {"error": "index.html not found"}, 404
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    icon_path = Path(__file__).resolve().parent / "favicon.ico"
+    return FileResponse(
+        icon_path,
+        media_type="image/x-icon",
+    )
 
 @app.get("/{path:path}")
 async def serve_static(path: str, request: Request):
