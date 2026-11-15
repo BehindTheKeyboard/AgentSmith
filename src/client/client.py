@@ -397,38 +397,79 @@ Locations:
             self.conversation_history.append(assistant_message)
 
             # Execute only the tools requested by the model.
+            scan_tools = {"scan_matrix", "scan_for_agents"}
+
             async with self.client:
                 for call in tool_calls:
                     name = call.function.name
                     arguments = call.function.arguments
 
-                    logger.debug("Calling MCP tool %s with %r", name, arguments)
-                    scan_tools = {"scan_matrix", "scan_agents"}
-                    if name in scan_tools:
-                        yield {"scan": {
+                    is_scan = name in scan_tools
+
+                    logger.debug(
+                        "Executing tool: name=%s, is_scan=%s, arguments=%r",
+                        name,
+                        is_scan,
+                        arguments,
+                    )
+
+                    if is_scan:
+                        default_location = (
+                            "city"
+                            if name == "scan_for_agents"
+                            else "local sector"
+                        )
+
+                        scan_event = {
                             "action": "start",
                             "tool": name,
-                            "location": arguments.get("location", "local sector"),
-                        }}
+                            "location": (
+                                arguments.get("location")
+                                or arguments.get("environment")
+                                or default_location
+                            ),
+                        }
+
+                        logger.debug("Emitting scan event: %r", scan_event)
+                        yield {"scan": scan_event}
 
                     try:
                         result = await asyncio.wait_for(
                             self.client.call_tool(name, arguments),
                             timeout=30,
                         )
-                        logger.debug("MCP tool %s returned", name)
+
                         result_text = "\n".join(
                             block.text
                             for block in result.content
                             if block.type == "text"
                         )
-                        if name == "scan_matrix":
-                            yield {"scan": {"action": "complete", "message": result_text}}
+
+                        logger.debug("MCP tool %s returned", name)
+
+                        if is_scan:
+                            scan_event = {
+                                "action": "complete",
+                                "tool": name,
+                                "message": result_text,
+                            }
+
+                            logger.debug(
+                                "Emitting scan completion: tool=%s",
+                                name,
+                            )
+                            yield {"scan": scan_event}
+
                     except Exception as exc:
                         logger.exception("MCP tool %s failed", name)
                         result_text = f"Tool failed: {exc}"
-                        if name == "scan_matrix":
-                            yield {"scan": {"action": "error", "message": result_text}}
+
+                        if is_scan:
+                            yield {"scan": {
+                                "action": "error",
+                                "tool": name,
+                                "message": result_text,
+                            }}
 
                     self.conversation_history.append({
                         "role": "tool",
@@ -495,6 +536,12 @@ async def chat(request: MessageRequest) -> StreamingResponse:
 
         try:
             async for chunk in agent.send_message_stream(message):
+                if isinstance(chunk, dict) and "scan" in chunk:
+                    logger.debug(
+                        "Forwarding scan to browser: action=%s, tool=%s",
+                        chunk["scan"].get("action"),
+                        chunk["scan"].get("tool"),
+                    )
                 payload = (
                     chunk if isinstance(chunk, dict)
                     else {"chunk": chunk}

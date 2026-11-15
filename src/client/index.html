@@ -2,32 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Matrix Terminal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Smith | Matrix Terminal</title>
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon" />
 </head>
 <body>
+  <div id="matrix-bg" aria-hidden="true"><canvas id="c"></canvas></div>
 
-  <div id="matrix-bg">
-    <canvas id="c"></canvas>
-  </div>
+  <div class="workspace">
+    <header class="workspace-header">
+      <div><p class="eyebrow">MATRIX // OPERATIONS</p><h1>Agent Smith</h1></div>
+      <p class="workspace-note">Conversation &amp; field intelligence</p>
+    </header>
 
-  <div class="chat-container">
-    <div class="messages" id="messages">
-      <!-- Messages will be added here -->
-    </div>
+    <main class="terminal-layout">
+      <section class="panel chat-container" aria-labelledby="chat-title">
+        <header class="panel-header">
+          <h2 id="chat-title">01 / COMMUNICATIONS</h2>
+          <span id="chat-status" class="badge" role="status">READY</span>
+        </header>
+        <div class="messages" id="messages" role="log" aria-label="Conversation with Agent Smith" aria-live="polite" aria-relevant="additions"></div>
+        <form id="chat-form" class="input-area">
+          <label class="sr-only" for="user-input">Message Agent Smith</label>
+          <input type="text" id="user-input" placeholder="Message Smith..." autocomplete="off" autofocus />
+          <button id="send-btn" type="submit">Send <span aria-hidden="true">↵</span></button>
+        </form>
+      </section>
 
-    <div class="input-area">
-      <input 
-        type="text" 
-        id="user-input" 
-        placeholder="Enter message..." 
-        autocomplete="off" 
-        autofocus 
-      />
-      <button id="send-btn">Send</button>
-    </div>
+      <aside class="panel scan-panel" id="matrix-scan-terminal" aria-labelledby="scan-title" data-state="idle">
+        <header class="panel-header">
+          <h2 id="scan-title">02 / SCAN TERMINAL</h2>
+          <span id="scan-state" class="badge">IDLE</span>
+        </header>
+        <div class="scan-meta">
+          <div><span class="meta-label">OPERATION</span><strong id="scan-operation">Awaiting scan</strong></div>
+          <div><span class="meta-label">SECTOR</span><strong id="scan-location">Not specified</strong></div>
+        </div>
+        <div class="code-section">
+          <div class="section-heading"><span>CODE STREAM</span><span aria-hidden="true">SYS / FEED</span></div>
+          <pre id="scan-output" aria-hidden="true">&gt; Terminal standing by.
+&gt; Ask Smith to scan a location or check for nearby agents.</pre>
+        </div>
+        <p id="scan-status" class="scan-status" role="status">No scan has been run in this session.</p>
+        <section class="results-section" aria-labelledby="results-title">
+          <h3 id="results-title" class="section-heading">LATEST RESULT</h3>
+          <div id="scan-results" class="scan-results"><p class="muted">Scan findings will remain here while you continue the conversation.</p></div>
+        </section>
+        <footer class="panel-footer">FICTIONAL MATRIX SCANS / NO REAL SYSTEMS SCANNED</footer>
+      </aside>
+    </main>
   </div>
 
   <script src="matrix-rain.js"></script>

@@ -1,283 +1,253 @@
-// chat.js - fixed streaming version with debug 
+// Chat and permanent scan terminal. Consumes the existing /chat SSE protocol.
+'use strict';
 
 const messagesDiv = document.getElementById('messages');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
-
+const chatStatus = document.getElementById('chat-status');
 let sessionId = null;
-let userName = null;
-
-// Start by asking for name
+let sending = false;
 
 addMessage(
-  "Well, hello. Tell me your name. If you don't not want to reveal your identity, you can ask a question instead. " +
-  "Introduce yourself anytime by saying 'My name is' and your name."
+  "How did you find this terminal? Tell me your name, or ask a question. " +
+  "You can introduce yourself anytime by saying 'My name is' followed by your name."
 );
+
+function scrollChat() { messagesDiv.scrollTop = messagesDiv.scrollHeight; }
+
+function addMessage(text, isUser = false) {
+  const element = document.createElement('div');
+  element.classList.add('message', isUser ? 'user' : 'agent');
+  if (!isUser && Math.random() > 0.7) {
+    element.classList.add('glitch');
+    element.style.animationDelay = `0s, ${Math.random() * 10}s`;
+  }
+  element.textContent = text;
+  messagesDiv.appendChild(element);
+  scrollChat();
+  return element;
+}
 
 async function sendMessage() {
   const text = userInput.value.trim();
-  if (!text) return;
-
-  addMessage(text, true);
+  if (!text || sending) return;
+  sending = true;
+  sendBtn.disabled = true;
+  chatStatus.textContent = 'RESPONDING';
   userInput.value = '';
-
-  if (!sessionId) {
-    sessionId = "session_" + crypto.randomUUID();
-  }
-
-  // Always send the actual message.
-  await streamResponse(text);
-}
-
-async function streamResponse(message, name = null) {
-  console.log("[JS] Sending request:", { session_id: sessionId, message, name });
+  addMessage(text, true);
 
   try {
-    const res = await fetch('/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: sessionId,
-        message: message,
-        name: name
-      })
-    });
-
-    console.log("[JS] Response status:", res.status);
-
-    if (!res.body) {
-      console.error("[JS] No stream body");
-      addMessage("[ERROR] No stream received.");
-      return;
+    if (!sessionId) {
+      sessionId = 'session_' + (globalThis.crypto?.randomUUID?.() ||
+        `${Date.now()}_${Math.random().toString(36).slice(2)}`);
     }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-
-    // Create the agent message element once
-    const messageElement = document.createElement('div');
-    messageElement.classList.add('message', 'agent');
-    if (Math.random() > 0.7) messageElement.classList.add('glitch');
-    messagesDiv.appendChild(messageElement);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    // In streamResponse, after creating messageElement:
-    const typingText = document.createElement('span');
-    typingText.classList.add('typing-text');
-    typingText.textContent = 'Agent Smith is typing...';
-    messageElement.appendChild(typingText);
-
-    // Blink animation via CSS (add to styles.css)
-
-    let fullReply = "";
-    let sseBuffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        window.matrixScanTerminal({ action: 'interrupted', message: 'Stream ended before scan completion.' });
-        console.log("[JS] Stream complete. Final reply:", fullReply);
-        break;
-      }
-
-      const chunk = decoder.decode(value, { stream: true });
-      console.log("[JS] Raw chunk:", chunk);
-
-      // Split into lines (SSE can send multiple in one chunk)
-      sseBuffer += chunk;
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop();
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        if (trimmed.startsWith('data: ')) {
-          const dataStr = trimmed.slice(6).trim();
-          console.log("[JS] Data:", dataStr);
-
-          if (dataStr === '[DONE]') {
-            console.log("[JS] [DONE] received");
-            break;
-          }
-
-          try {
-            const data = JSON.parse(dataStr);
-            if (data.scan) {
-              window.matrixScanTerminal(data.scan);
-              continue;
-            }
-            if (data.chunk) {
-              fullReply += data.chunk;
-              messageElement.textContent = fullReply;
-              messagesDiv.scrollTop = messagesDiv.scrollHeight;
-              console.log("[JS] Appended:", data.chunk);
-            }
-          } catch (e) {
-            console.error("[JS] Parse error:", e, "on:", dataStr);
-          }
-        }
-      }
-    }
-  } catch (err) {
-    window.matrixScanTerminal({ action: 'error', message: 'Connection failed.' });
-    console.error("[JS] Fetch/stream error:", err);
-    addMessage("[ERROR] Connection failed.");
+    await streamResponse(text);
+  } finally {
+    sending = false;
+    sendBtn.disabled = false;
+    chatStatus.textContent = 'READY';
   }
 }
 
-sendBtn.addEventListener('click', sendMessage);
-userInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    sendMessage();
-  }
+document.getElementById('chat-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  sendMessage();
 });
 
-function addMessage(text, isUser = false) {
-  const msg = document.createElement('div');
-  msg.classList.add('message');
-  msg.classList.add(isUser ? 'user' : 'agent');
-  if (!isUser && Math.random() > 0.7) {
-    msg.classList.add('glitch');
+async function streamResponse(message, name = null) {
+  const messageElement = addMessage('');
+  const typingText = document.createElement('span');
+  typingText.className = 'typing-text';
+  typingText.textContent = 'Agent Smith is typing...';
+  messageElement.appendChild(typingText);
+  let fullReply = '';
+  let reader;
+  let completed = false;
+
+  function consumeEvent(frame) {
+    const dataText = frame.split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).replace(/^ /, ''))
+      .join('\n');
+    if (!dataText) return;
+    if (dataText.trim() === '[DONE]') { completed = true; return; }
+    const data = JSON.parse(dataText);
+    if (data.scan) {
+      console.debug('[SCAN] Received:', data.scan);
+      window.matrixScanTerminal(data.scan);
+    }
+    if (typeof data.chunk === 'string' && data.chunk) {
+      const follow = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 90;
+      fullReply += data.chunk;
+      messageElement.textContent = fullReply;
+      if (follow) scrollChat();
+    }
   }
-  msg.textContent = text;
-  messagesDiv.appendChild(msg);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+  try {
+    const response = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, message, name }),
+    });
+    if (!response.ok) throw new Error(`Chat request failed (HTTP ${response.status}).`);
+    if (!response.body) throw new Error('No response stream was received.');
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (!completed) {
+      const { done, value } = await reader.read();
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      let boundary;
+      while (!completed && (boundary = /\r?\n\r?\n/.exec(buffer))) {
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary[0].length);
+        consumeEvent(frame);
+      }
+      if (done) {
+        if (!completed && buffer.trim()) consumeEvent(buffer);
+        break;
+      }
+    }
+
+    if (!fullReply.trim()) {
+      messageElement.textContent = '[No text response received. Check the client log.]';
+    } else if (!completed) {
+      messageElement.textContent += '\n[Connection ended before the response finished.]';
+    }
+    // Only an unfinished scan changes state; completed findings remain visible.
+    window.matrixScanTerminal({ action: 'interrupted', message: 'Chat stream ended before scan completion.' });
+  } catch (error) {
+    console.error('[CHAT] Streaming failed:', error);
+    messageElement.textContent = (fullReply ? fullReply + '\n' : '') +
+      '[ERROR] ' + error.message;
+    window.matrixScanTerminal({ action: 'error', message: 'Chat connection or stream failed.' });
+  } finally {
+    if (reader) {
+      try { await reader.cancel(); } catch { /* Already closed or disconnected. */ }
+      reader.releaseLock();
+    }
+    scrollChat();
+  }
 }
 
-// MATRIX_SCAN_POPUP_V1: embedded terminal; no HTML or CSS file changes needed.
+// Permanent panel; same window.matrixScanTerminal(event) interface as before.
 (() => {
-  let dialog;
-  let output;
-  let status;
+  const panel = document.getElementById('matrix-scan-terminal');
+  const output = document.getElementById('scan-output');
+  const status = document.getElementById('scan-status');
+  const badge = document.getElementById('scan-state');
+  const results = document.getElementById('scan-results');
+  const operation = document.getElementById('scan-operation');
+  const location = document.getElementById('scan-location');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const toolNames = { scan_matrix: 'Matrix anomaly scan', scan_for_agents: 'Nearby agent scan', scan_agents: 'Nearby agent scan', detect_the_one: 'Candidate investigation' };
+  const characters = Array.from('零壱弐参四五六七八九電脳仮想空間接続解析情報異常探索アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<>[]{}:=+-*/     ');
   let timer = null;
   let running = false;
+  let started = 0;
+  let generated = 0;
+  let retainedLines = [];
 
-  function stopTimer() {
-    clearInterval(timer);
-    timer = null;
+  function readable(value) { return String(value ?? '').replaceAll('_', ' '); }
+  function stopTimer() { clearInterval(timer); timer = null; }
+  function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+  function createCodeLine() {
+    return Array.from({ length: randomInt(12, 64) }, () => characters[randomInt(0, characters.length - 1)]).join('');
   }
-
-  function createTerminal() {
-    if (dialog) return;
-
-    const style = document.createElement('style');
-    style.textContent = `
-      #matrix-scan-terminal {
-        box-sizing: border-box; width: min(640px, 92vw); max-height: 80vh;
-        background: #050b07; color: #79ff9c; border: 1px solid #35b961;
-        border-radius: 8px; padding: 20px; box-shadow: 0 0 35px #24ac4040;
-        font: 14px/1.6 Consolas, monospace;
-      }
-      #matrix-scan-terminal::backdrop { background: #000a; }
-      #matrix-scan-terminal header {
-        display: flex; justify-content: space-between; align-items: center;
-        gap: 16px; margin-bottom: 16px;
-      }
-      #matrix-scan-terminal button {
-        background: #102418; color: #a0ffb9; border: 1px solid #35b961;
-        padding: 5px 12px; border-radius: 4px; cursor: pointer;
-      }
-      #matrix-scan-terminal pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-    `;
-    document.head.appendChild(style);
-
-    dialog = document.createElement('dialog');
-    dialog.id = 'matrix-scan-terminal';
-    dialog.setAttribute('aria-labelledby', 'matrix-scan-title');
-
-    const header = document.createElement('header');
-    const title = document.createElement('strong');
-    title.id = 'matrix-scan-title';
-    title.textContent = 'MATRIX // SCAN TERMINAL';
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.textContent = 'Close';
-    close.addEventListener('click', () => dialog.close());
-    header.append(title, close);
-
-    output = document.createElement('pre');
-    status = document.createElement('div');
-    status.setAttribute('role', 'status');
-    dialog.append(header, output, status);
-    dialog.addEventListener('close', stopTimer);
-    document.body.appendChild(dialog);
+  function appendLines(lines) {
+    retainedLines.push(...lines);
+    retainedLines = retainedLines.slice(-500);
+    output.textContent = retainedLines.join('\n');
+    output.scrollTop = output.scrollHeight;
+  }
+  function addText(parent, text, tag = 'p', className = '') {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    if (className) node.className = className;
+    parent.appendChild(node);
+    return node;
+  }
+  function showResult(message, action) {
+    results.replaceChildren();
+    let data = message;
+    if (typeof message === 'string') {
+      try { data = JSON.parse(message); } catch { /* Plain-text tool response. */ }
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      addText(results, String(message || (action === 'complete' ? 'Scan complete.' : 'Scan stopped.')));
+      return false;
+    }
+    if (data.location_name) location.textContent = data.location_name;
+    if (data.error) addText(results, String(data.error));
+    if (data.message) addText(results, String(data.message));
+    if (typeof data.threat === 'boolean') {
+      addText(results, data.threat ? 'Potential threat reported.' : 'No active threat reported by this scan.');
+    }
+    if (Array.isArray(data.findings)) {
+      data.findings.forEach((finding) => {
+        if (!finding || typeof finding !== 'object') {
+          addText(results, String(finding));
+          return;
+        }
+        const card = document.createElement('article');
+        card.className = 'finding' + (finding.threat ? ' threat' : '');
+        addText(card, readable(finding.agent || finding.title || finding.id || 'Finding'), 'h4');
+        if (finding.alignment) addText(card, `Alignment: ${readable(finding.alignment)}`, 'p', 'muted');
+        if (typeof finding.threat === 'boolean') addText(card, finding.threat ? 'Threat activity detected' : 'No hostile activity observed', 'p', 'muted');
+        if (finding.severity) addText(card, `Severity: ${readable(finding.severity)}`, 'p', 'muted');
+        if (finding.description) addText(card, String(finding.description));
+        if (finding.activity) addText(card, String(finding.activity));
+        results.appendChild(card);
+      });
+    } else if (!data.message && !data.error) {
+      addText(results, JSON.stringify(data, null, 2), 'pre', 'result-raw');
+    }
+    return Boolean(data.error);
   }
 
   window.matrixScanTerminal = (event) => {
-    createTerminal();
+    if (!event || !event.action) return;
     if (event.action === 'start') {
       stopTimer();
       running = true;
-      output.textContent =
-        'System Scan INITIATED.\n' +
-        '> ' + (event.tool || 'scan_matrix') + ' ' +
-        (event.location || 'local sector') + '\n' +
-        '[START] Tool execution started.\n';
-      status.textContent = '[SCAN] Scanning...';
-      if (!dialog.open) dialog.showModal();
-      
-            const started = Date.now();
-
-      const characters = Array.from(
-        '零壱弐参四五六七八九電脳仮想空間接続解析情報異常探索' +
-        'アイウエオカキクケコサシスセソタチツテトナニヌネノ' +
-        'ハヒフヘホマミムメモヤユヨラリルレロワヲン' +
-        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<>[]{}:=+-*/' +
-        ' '
-      );
-
-      function randomInt(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-      }
-
-      function createCodeLine() {
-        const length = randomInt(12, 90);
-        let line = '';
-
-        for (let i = 0; i < length; i++) {
-          line += characters[randomInt(0, characters.length - 1)];
-        }
-
-        return line;
-      }
-
-      // Choose a new amount for every scan.
+      started = Date.now();
+      generated = 0;
+      panel.dataset.state = 'running';
+      badge.textContent = 'SCANNING';
+      operation.textContent = toolNames[event.tool] || readable(event.tool || 'Matrix scan');
+      location.textContent = readable(event.location_name || event.location || event.environment || 'Local sector');
+      retainedLines = [];
+      appendLines(['> System scan initiated.', '> Awaiting tool result...']);
+      results.replaceChildren();
+      addText(results, 'Scan in progress. Findings will appear here.', 'p', 'muted');
+      status.textContent = 'Scanning… awaiting tool result.';
+      if (reducedMotion.matches) return;
       const targetLines = randomInt(100, 1000);
-      const animationDuration = 2400;
-      let linesWritten = 0;
-
-      output.style.maxHeight = '280px';
-      output.style.overflowY = 'auto';
-      output.style.fontFamily =
-        '"Yu Gothic", "Meiryo", Consolas, monospace';
-
       timer = setInterval(() => {
         const elapsed = Date.now() - started;
-
-        // Spread the chosen number of lines across the animation.
-        const progress = Math.min(elapsed / animationDuration, 1);
-        const expectedLines = Math.floor(progress * targetLines);
+        const expected = Math.floor(Math.min(elapsed / 2400, 1) * targetLines);
         const batch = [];
-
-        while (linesWritten < expectedLines) {
-          batch.push(createCodeLine());
-          linesWritten++;
-        }
-
-        if (batch.length > 0) {
-          output.textContent += batch.join('\n') + '\n';
-          output.scrollTop = output.scrollHeight;
-        }
-
-        status.textContent =
-          `[SCAN] ${linesWritten} code lines generated — awaiting tool result`;
-      }, 40);
-
-    } else if (running && ['complete', 'error', 'interrupted'].includes(event.action)) {
-      stopTimer();
-      running = false;
-      output.textContent += (event.action === 'complete' ? '[RESULT] ' : '[ERROR] ') +
-        (event.message || 'Scan interrupted.') + '\n';
-      status.textContent = event.action === 'complete' ? '[DONE] Scan complete.' : '[STOPPED]';
+        while (generated < expected) { batch.push(createCodeLine()); generated++; }
+        if (batch.length) appendLines(batch);
+        status.textContent = `Scanning · ${generated} code lines · awaiting tool result`;
+        // Animation is decorative. Completion comes only from the backend event.
+        if (generated >= targetLines) stopTimer();
+      }, 60);
+      return;
     }
+    if (!running || !['complete', 'error', 'interrupted'].includes(event.action)) return;
+    stopTimer();
+    running = false;
+    const toolFailed = showResult(event.message, event.action);
+    const action = toolFailed ? 'error' : event.action;
+    panel.dataset.state = action;
+    badge.textContent = action === 'complete' ? 'COMPLETE' : action === 'error' ? 'ERROR' : 'STOPPED';
+    appendLines([`> ${badge.textContent} / see findings below.`]);
+    status.textContent = action === 'complete'
+      ? `Scan complete · ${((Date.now() - started) / 1000).toFixed(1)}s`
+      : 'Scan stopped. Details are shown below.';
   };
 })();
