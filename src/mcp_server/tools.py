@@ -301,7 +301,7 @@ def register_tools(mcp: FastMCP):
         # Each scan has a 30% chance of finding one anomaly.
         findings = []
 
-        if random.random() < 1.0:
+        if random.random() < 0.30:
             findings.append(random.choice(POSSIBLE_ANOMOLIES))
 
         return {

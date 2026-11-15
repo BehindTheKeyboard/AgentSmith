@@ -281,32 +281,7 @@ Locations:
         # Limit tool rounds so a repeated tool request cannot loop forever.
         for round_index in range(8):
             logger.debug("Tool round %s of 8", round_index + 1)
-
-            # stream = await self.ollama_client.chat(
-            #     model=MODEL_NAME,
-            #     messages=self.conversation_history,
-            #     tools=self.tool_schemas or None,
-            #     options={"temperature": temp},
-            #     stream=True,
-            # )
-
-            # content = ""
-            # thinking = ""
-            # tool_calls = []
-
-            # async for chunk in stream:
-            #     msg = chunk.message
-
-            #     if msg.content:
-            #         content += msg.content
-            #         yield msg.content
-
-            #     if msg.thinking:
-            #         thinking += msg.thinking
-
-            #     if msg.tool_calls:
-            #         tool_calls.extend(msg.tool_calls)
-
+            
             started = time.monotonic()
 
             logger.debug(
